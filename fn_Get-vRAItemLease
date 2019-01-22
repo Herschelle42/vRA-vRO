@@ -1,0 +1,82 @@
+function Get-vRAItemLease {
+<#
+.SYNOPSIS
+  Get the lease expiry date of a vRA Item.
+.DESCRIPTION
+  Get the lease expiry of a given vRA Item. Machine or Deployment.
+  An expiry date of 1 Jan 1970 indicates that the item cannot be found in vRA.
+  Most likely because the item has been deleted.
+  A blank expiry indicates there is _no_ expiry date set.
+.NOTES
+    Author: Clint Fritz
+#>
+
+#requires -modules PowervRA
+[CmdletBinding(DefaultParameterSetName="Machine")]
+
+Param(
+    #Assuming that we can use a Machine name to determine a deployment.
+    [Parameter(Mandatory=$true,ParametersetName="Machine")]
+    [Alias("MachineName,Deployment")]
+    [string[]]$ComputerName
+
+)
+
+    Begin {
+
+        #check there is a PowervRA connection to a vRA Server
+        if ($vRAConnection) {
+            Write-Verbose "[INFO] Connected to : $vRAConnection.Server"
+        } else {
+            throw "Must be connected to a vRA server."
+        }#end if
+
+    }#end Begin block
+
+    Process {
+
+        foreach ($Computer in $ComputerName) {
+
+            #Get the resource details for the machine
+            $resource = Get-vRAResource -Name $Computer
+            Write-Verbose "[INFO] Resource: $($resource)"
+
+            if ($resource) {
+
+                if ($resource.Lease.end)
+                {
+                    Write-Verbose "[INFO] Resource Lease End: $($resource.Lease.end | Get-Date)"
+
+                    $hash = [ordered]@{}
+                    $hash.ComputerName = $Computer
+                    $hash.ExpiryDate = $($resource.Lease.end | Get-Date)
+                    $object = new-object PSObject -property $hash
+                    $object
+
+                } else {
+                    Write-Verbose "[INFO] No Resource Lease found."
+
+                    $hash = [ordered]@{}
+                    $hash.ComputerName = $Computer
+                    $hash.ExpiryDate = $null
+                    $object = new-object PSObject -property $hash
+                    $object
+
+                }#end if resource lease end
+
+            } else {
+                #if no resource is return it probably means that it does not exist.
+                #should we throw an error?
+                $hash = [ordered]@{}
+                $hash.ComputerName = $Computer
+                $hash.ExpiryDate = "1 jan 1970" | Get-Date 
+                $object = new-object PSObject -property $hash
+                $object
+                
+            }#end if Resource
+
+        }#end foreach Computer
+
+    }#end Process block
+
+}#end function
