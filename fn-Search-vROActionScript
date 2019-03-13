@@ -1,0 +1,174 @@
+function Search-vROActionScript
+{
+<#
+.Synopsis
+   Search the script of an Action using regex or a simple text search
+.DESCRIPTION
+   Retrieves one or more vRO(vCO) Actions that meet the criteria specified by the parameters.
+.EXAMPLE
+   Search-vROAction
+.INPUTS
+   [String]
+   [Int]
+   [SecureString]
+   [Management.Automation.PSCredential]
+.OUTPUTS
+   [PSObject]
+.NOTES
+   Author:  Clint Fritz
+.Parameter ComputerName
+   The FQDN, IP address of the vRO servers
+#>
+[CmdletBinding()]
+    Param
+    (
+        #Protocol to use. http / https. Default is https.
+        [Parameter(Mandatory=$false)]
+        [ValidateSet("https","http")]
+        [string]$Protocol="https",
+
+        #Name, FQDN or IP address of vRO server
+        [Parameter(Mandatory=$true)]
+        [Alias("Server","IPAddress","FQDN")]
+        [string]$ComputerName,
+
+        #The port for the API.
+        [Parameter(Mandatory=$false)]
+        [ValidatePattern("^[1-9][0-9]{0,4}$")]
+        [int]$Port,
+
+        #Username to access
+        [Parameter(Mandatory=$true,ParameterSetName="Username")]
+        [string]$Username,
+
+        #Password of user
+        [Parameter(Mandatory=$true,ParameterSetName="Username")]
+        [SecureString]$Password,
+
+        #Credential object
+        [Parameter(Mandatory=$true,ParameterSetName="Credential")]
+        [ValidateNotNullOrEmpty()]
+        [Management.Automation.PSCredential]$Credential,
+
+        #Object type to search. Only Action at this point. Look to expand to cover others later, if possible
+        [Parameter(Mandatory=$false)]
+        [ValidateSet("action")]
+        [string]$Type="action",
+
+        #String Pattern to search.
+        [Parameter(Mandatory=$true)]
+        [String]$Pattern,
+
+        #indicate whether the Pattern should be treated as regex pattern. Default is false
+        [Parameter(Mandatory=$false)]
+        [Switch]$Regex=$false
+        
+    )
+
+    Begin
+    {
+        [string]$method="GET"
+
+        Write-Verbose "[INFO] Protocl: $($Protocol)"
+        Write-Verbose "[INFO] ComputerName: $($ComputerName)"
+        Write-Verbose "[INFO] Port: $($Port)"
+
+        #--- extract username and password from credential
+        if ($PSBoundParameters.ContainsKey("Credential")){
+            Write-Verbose "[INFO] Credential: $($Credential | Out-String)"
+            $Username = $Credential.UserName
+            $UnsecurePassword = $Credential.GetNetworkCredential().Password
+        }
+        
+        if ($PSBoundParameters.ContainsKey("Password")){
+            Write-Verbose "[INFO] Username: $($Username)"
+            Write-Verbose "[INFO] Password: $($Password)"
+            $UnsecurePassword = (New-Object System.Management.Automation.PSCredential(“username”, $Password)).GetNetworkCredential().Password
+        }
+
+        Write-Verbose "[INFO] Type: $($Type)"
+        Write-Verbose "[INFO] Pattern: $($Pattern)"
+        Write-Verbose "[INFO] Regex: $($Regex)"
+
+        #If not a regex pattern, then escape it so that regex characters are escaped.
+        #for example fullstop . in regex is any character. espacing it means to search for the fullstop character itself.
+        if (-not $regex)
+        {
+            $Pattern = [regex]::Escape($Pattern)
+        }
+        
+        #--- Create authorization headers
+        #Write-Verbose "insecure: $($UnsecurePassword)"
+        $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $Username,$UnsecurePassword)))
+        $headers = @{"Authorization"=("Basic {0}" -f $base64AuthInfo)}
+        #$headers = @{"Content-Type"="application/json"; "Accept"="application/json"; "Authorization"=("Basic {0}" -f $base64AuthInfo)}
+
+        Write-Verbose "[INFO] Headers: $($headers)"
+
+        #If a port is defined, updated the server uri.
+        $serverUri = $null
+        if($Port) {
+          $serverUri = "$($protocol)://$($ComputerName):$($Port)"
+        } else {
+          $serverUri = "$($protocol)://$($ComputerName)"
+        }
+        $serverUri = "$($serverUri)/vco/api"
+        Write-Verbose "[INFO] Server Uri: $($serverUri)"
+
+    }#end Begin block
+
+    Process
+    {
+        #If searching for an Action
+        if ($Type -eq "action")
+        {
+            $uri = "$($serverUri)/actions"
+            Write-Verbose "[INFO] Connect to vRO and collect all actions"
+            $result = $null
+            $result = Invoke-RestMethod -Method $method -UseBasicParsing -Uri $uri -Headers $headers
+
+            Write-Verbose "[INFO] Create a new flat custom object for easier manipulation"
+            $action = $null
+            $actionList = foreach ($action in $result.link){
+    
+                $hash = [ordered]@{}
+                foreach ($attrib in $action.attributes)
+                {
+                    $hash.$($attrib.name) = $($attrib.value)
+                }#end foreach attrib
+                $hash.href = $action.href
+                $hash.rel = $action.rel
+                $object = new-object PSObject -property $hash 
+                $object
+  
+            }#end foreach action
+
+            Write-Verbose "[INFO] Get each Action script"
+            $item = $null
+            foreach ($item in $actionList)
+            {
+                Write-Verbose "[INFO] Action: $($item.name)"
+                $result = Invoke-RestMethod -Method $method -UseBasicParsing -Uri $item.href -Headers $headers
+
+                if ($scriptLines = $result.script.Split("`r`n") -match $Pattern)
+                {
+                    $hash=[ordered]@{}
+                    $hash.Name = $item.name
+                    $hash.FQN = $item.fqn
+                    $hash.Id = $item.id
+                    $hash.ScriptLines = $scriptLines
+                    $object = New-Object -TypeName PSObject -Property $hash
+                    $object
+                }
+
+            }#end foreach item
+
+        }#end if Type
+        
+    }#end Process block
+
+    End
+    {
+    }#end End block
+
+}#end Function
