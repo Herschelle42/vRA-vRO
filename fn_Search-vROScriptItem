@@ -1,0 +1,333 @@
+function Search-vROScriptItem
+{
+<#
+.Synopsis
+   Search the Script Item of an Action or Workflow using regex or a simple text search
+.DESCRIPTION
+   Retrieves one or more vRO(vCO) Actions that meet the criteria specified by the parameters.
+.EXAMPLE
+   Search-vROAction
+.INPUTS
+   [String]
+   [Int]
+   [SecureString]
+   [Management.Automation.PSCredential]
+.OUTPUTS
+   [PSObject]
+.Parameter ComputerName
+   The FQDN, IP address of the vRO server
+.NOTES
+   Author:  Clint Fritz
+   Enhancments: Add Matches Property to the result of Action scripts.
+   Add a Type of All? Then create internal functions for getting the Action and Workflow information.
+      which would require changing the outputs for all to be the same. ie change workflow Path to be the globalTags
+      plus the Workflow name and the name being the Item. or the name being the Workflow\ItemName.
+   Add Case sensitivity searching
+
+#>
+[CmdletBinding()]
+    Param
+    (
+        #Protocol to use. http / https. Default is https.
+        [Parameter(Mandatory=$false)]
+        [ValidateSet("https","http")]
+        [string]$Protocol="https",
+
+        #Name, FQDN or IP address of vRO server
+        [Parameter(Mandatory=$true)]
+        [Alias("Server","IPAddress","FQDN")]
+        [string]$ComputerName,
+
+        #The port for the API.
+        [Parameter(Mandatory=$false)]
+        [ValidatePattern("^[1-9][0-9]{0,4}$")]
+        [int]$Port,
+
+        #Username to access
+        [Parameter(Mandatory=$true,ParameterSetName="Username")]
+        [string]$Username,
+
+        #Password of user
+        [Parameter(Mandatory=$true,ParameterSetName="Username")]
+        [SecureString]$Password,
+
+        #Credential object
+        [Parameter(Mandatory=$true,ParameterSetName="Credential")]
+        [ValidateNotNullOrEmpty()]
+        [Management.Automation.PSCredential]$Credential,
+
+        #Object type to search. Only Action at this point. Look to expand to cover others later, if possible
+        [Parameter(Mandatory=$true)]
+        [ValidateSet("action","workflow")]
+        [string]$Type,
+
+        #String Pattern to search.
+        [Parameter(Mandatory=$true)]
+        [String]$Pattern,
+
+        #indicate whether the Pattern should be treated as regex pattern. Default is false
+        [Parameter(Mandatory=$false)]
+        [Switch]$Regex=$false
+        
+    )
+
+    Begin
+    {
+        [string]$method="GET"
+
+        Write-Verbose "[INFO] Protocl: $($Protocol)"
+        Write-Verbose "[INFO] ComputerName: $($ComputerName)"
+        Write-Verbose "[INFO] Port: $($Port)"
+
+        #--- extract username and password from credential
+        if ($PSBoundParameters.ContainsKey("Credential")){
+            Write-Verbose "[INFO] Credential: $($Credential | Out-String)"
+            $Username = $Credential.UserName
+            $UnsecurePassword = $Credential.GetNetworkCredential().Password
+        }
+        
+        if ($PSBoundParameters.ContainsKey("Password")){
+            Write-Verbose "[INFO] Username: $($Username)"
+            Write-Verbose "[INFO] Password: $($Password)"
+            $UnsecurePassword = (New-Object System.Management.Automation.PSCredential(“username”, $Password)).GetNetworkCredential().Password
+        }
+
+        Write-Verbose "[INFO] Type: $($Type)"
+
+        #If not a regex pattern, then escape it so that regex characters are escaped.
+        #for example fullstop . in regex is any character. espacing it means to search for the fullstop character itself.
+        <#
+        if (-not $regex)
+        {
+            $Pattern = [regex]::Escape($Pattern)
+        }
+        No longer required as using the Select-String and parameters rather than -match
+        #>
+
+        Write-Verbose "[INFO] Pattern: $($Pattern)"
+        Write-Verbose "[INFO] Regex: $($Regex)"
+        
+        #--- Create authorization headers
+        #Write-Verbose "insecure: $($UnsecurePassword)"
+        $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $Username,$UnsecurePassword)))
+        $headers = @{"Authorization"=("Basic {0}" -f $base64AuthInfo)}
+        #$headers = @{"Content-Type"="application/json"; "Accept"="application/json"; "Authorization"=("Basic {0}" -f $base64AuthInfo)}
+
+        Write-Verbose "[INFO] Headers: $($headers | Out-String)"
+
+        #If a port is defined, updated the server uri.
+        $serverUri = $null
+        if($Port) {
+          $serverUri = "$($protocol)://$($ComputerName):$($Port)"
+        } else {
+          $serverUri = "$($protocol)://$($ComputerName)"
+        }
+        $apiUri = "$($serverUri)/vco/api"
+        Write-Verbose "[INFO] Server API Uri: $($apiUri)"
+
+        <#
+        vRO 7.x requires tls 1.2 to work, otherwise will receive the error:
+        Invoke-RestMethod : The underlying connection was closed: An unexpected error occurred on a send.
+        when attempting to do Invoke-restmethod
+        #>
+        if (-not ("Tls12" -in  (([System.Net.ServicePointManager]::SecurityProtocol).ToString() -split ", ")))
+        {
+            Write-Verbose "[INFO] Adding Tls 1.2 to security protocol"
+            [System.Net.ServicePointManager]::SecurityProtocol += [System.Net.SecurityProtocolType]::Tls12
+        }#end if tls12
+
+
+    }#end Begin block
+
+    Process
+    {
+        #--- Search Actions ---------------------------------------------------
+        if ($Type -eq "action")
+        {
+            Write-Verbose "[INFO] Get Actions"
+
+            $uri = "$($apiUri)/actions"
+            Write-Verbose "[INFO] Connect to vRO and collect all actions"
+            $result = $null
+            $result = Invoke-RestMethod -Method $method -UseBasicParsing -Uri $uri -Headers $headers
+
+            Write-Verbose "[INFO] Create a new flat custom object for easier manipulation"
+            $action = $null
+            $actionList = foreach ($action in $result.link){
+    
+                $hash = [ordered]@{}
+                foreach ($attrib in $action.attributes)
+                {
+                    $hash.$($attrib.name) = $($attrib.value)
+                }#end foreach attrib
+                $hash.href = $action.href
+                $hash.rel = $action.rel
+                $object = new-object PSObject -property $hash 
+                $object
+  
+            }#end foreach action
+
+            Write-Verbose "[INFO] Get each Action script"
+            $item = $null
+            foreach ($item in $actionList)
+            {
+                Write-Verbose "[INFO] Action: $($item.name)"
+                $result = Invoke-RestMethod -Method $method -UseBasicParsing -Uri $item.href -Headers $headers
+
+                #Is this a regex search or a simple text search.
+                if ($regex) 
+                {
+                    Write-Verbose "[INFO] Regex search"
+
+                    if ($linesFound = $result.script.Split("`r`n") | Select-String -Pattern $pattern | Select LineNumber, Line)
+                    {
+                        Write-Verbose "[INFO] Lines found: $($linesFound.count)"
+                        $hash=[ordered]@{}
+                        $hash.Type="Action"
+                        $hash.Name = $item.name
+                        $hash.Path = $item.fqn
+                        $hash.Id = $item.id
+                        $hash.Matches = $linesFound
+                        $object = New-Object -TypeName PSObject -Property $hash
+                        $object
+                    }#end if lines pattern (regex)
+
+                } else {
+                    Write-Verbose "[INFO] Simple search"
+
+                    if ($linesFound = $result.script.Split("`r`n") | Select-String -SimpleMatch $pattern | Select LineNumber, Line)
+                    {
+                        Write-Verbose "[INFO] Lines found: $($linesFound.count)"
+                        $hash=[ordered]@{}
+                        $hash.Type="Action"
+                        $hash.Name = $item.name
+                        $hash.Path = $item.fqn
+                        $hash.Id = $item.id
+                        $hash.Matches = $linesFound
+                        $object = New-Object -TypeName PSObject -Property $hash
+                        $object
+                    }#end if lines simplematch
+
+                }#end if regex
+
+            }#end foreach item
+
+        }#end if Type action
+
+        #--- Search Workflows -------------------------------------------------
+        if ($Type -eq "workflow")
+        {
+            Write-Verbose "[INFO] Get Workflows"
+
+            $uri = "$($apiUri)/workflows?maxResult=2147483647&startIndex=0&queryCount=false"
+            $result = $null
+            $result = Invoke-RestMethod -Method $method -UseBasicParsing -Uri $uri -Headers $headers
+            #$result
+
+            Write-Verbose "[INFO] Create a new flat custom object for easier manipulation"
+            $item = $null
+            $itemList = foreach ($item in $result.link){
+    
+                $hash = [ordered]@{}
+                foreach ($attrib in $item.attributes)
+                {
+                    $hash.$($attrib.name) = $($attrib.value)
+                }#end foreach attrib
+                $hash.href = $item.href
+                $hash.rel = $item.rel
+                $hash.Script = $null
+                $object = new-object PSObject -property $hash 
+                $object
+  
+            }#end foreach action
+
+
+            Write-Verbose "[INFO] Get each Workflow subcomponent script block"
+            $item = $null
+            foreach ($item in $itemList)
+            {
+                Write-Verbose "[INFO] Workflow: $($item.name)"
+                try {
+                    $wfContent = $null
+                    $wfContent = Invoke-RestMethod -Method $method -UseBasicParsing -Uri "$($item.href)content/" -Headers $headers
+                } catch [System.Net.WebException] {
+        
+                    if ($($_.Exception.Message) -eq "The remote server returned an error: (400) Bad Request." )
+                    {
+                        Write-Verbose "[ERROR] !!! $($_.Exception.Message)"
+                        <# Undecided how we surface this up.
+                        $hash=[ordered]@{}
+                        $hash.Name = $item.name
+                        $hash.Path = $item.globalTags.Replace(" ","\")
+                        $hash.ItemName = "ERROR: $($_.Exception.Message)"
+                        $hash.Matches = $null
+                        $object = New-Object -TypeName PSObject -Property $hash
+                        $object
+                        #>
+                    } else {
+                        throw
+                    }
+
+                } catch {
+                    throw
+                }#end try catch
+
+                foreach ($contentItem in $wfContent.'workflow-item' | ? { $_.Script } )
+                {
+                    Write-Verbose "[INFO] ItemName: $($contentItem.'display-name')"
+        
+                    #Is this a regex search or a simple text search.
+                    if ($regex) 
+                    {
+                        Write-Verbose "[INFO] Regex search"
+
+                        if ($linesFound = $contentItem.script.value.Split("`r`n") | Select-String -Pattern $pattern | Select LineNumber, Line)
+                        {
+                            Write-Verbose "[INFO] Lines found: $($linesFound.count)"
+                            $hash=[ordered]@{}
+                            $hash.Type="Workflow-$($contentItem.type)"
+                            #$hash.Name = $item.name
+                            #$hash.Path = $item.globalTags.Replace(" ","\")
+                            #$hash.ItemName = $contentItem.'display-name'
+                            $hash.Name = $contentItem.'display-name'
+                            $hash.Path = "$($item.globalTags.Replace(' ','\'))\$($item.name)"
+                            $hash.Id = $item.Id
+                            $hash.Matches = $linesFound
+                            $object = New-Object -TypeName PSObject -Property $hash
+                            $object
+                        }#end if lines pattern (regex)
+
+                    } else {
+                        Write-Verbose "[INFO] Simple search"
+
+                        if ($linesFound = $contentItem.script.value.Split("`r`n") | Select-String -SimpleMatch $pattern | Select LineNumber, Line)
+                        {
+                            Write-Verbose "[INFO] Lines found: $($linesFound.count)"
+                            $hash=[ordered]@{}
+                            $hash.Type="Workflow-$($contentItem.type)"
+                            #$hash.Name = $item.name
+                            #$hash.Path = $item.globalTags.Replace(" ","\")
+                            #$hash.ItemName = $contentItem.'display-name'
+                            $hash.Name = $contentItem.'display-name'
+                            $hash.Path = "$($item.globalTags.Replace(' ','\'))\$($item.name)"
+                            $hash.Id = $item.Id
+                            $hash.Matches = $linesFound
+                            $object = New-Object -TypeName PSObject -Property $hash
+                            $object
+                        }#end if lines simplematch
+
+                    }#end if regex
+                    
+                }#end foreach contentItem
+
+            }#end foreach item
+
+        }#end if type workflow
+        
+    }#end Process block
+
+    End
+    {
+    }#end End block
+
+}#end Function
