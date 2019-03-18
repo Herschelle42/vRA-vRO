@@ -5,21 +5,63 @@ function Search-vROScriptItem
    Search the Script Item of an Action or Workflow using regex or a simple text search
 .DESCRIPTION
    Retrieves one or more vRO(vCO) Actions that meet the criteria specified by the parameters.
+.PARAMETER Protocol
+    The protocol to use to connect to vRO. Valid values are http/https. Default is https.
+.PARAMETER ComputerName
+   The FQDN, IP address of the vRO server
+.PARAMETER Port
+    The port to connect to vRO. For example 8281. Default is none.
+.PARAMETER Username
+    The username to connect to vRO
+.PARAMETER Password
+    The password to connect to vRO
+.PARAMETER Credential
+    The powershell Credential object to use to connect to vRO
+.PARAMETER Type
+    The vRO object type to search. Valid values are action\workflow. Mandatory.
+.PARAMETER Pattern
+    The text string or regex pattern to search for.
+.PARAMETER Regex
+    Switch indicating whether the Pattern is a regex. Default is false.
+    Uses Select-String -Pattern parameter if enabled. Else uses the -SimpleMatch for non-regex string searching.
 .EXAMPLE
-   Search-vROAction
+    $pattern = ".local"
+    $credential = Get-Credential -Username "vro-user" -Message "Please enter vRO Username and password"
+    [array]$result = Search-vROScriptItem -ComputerName "vro.corp.local" -Credential $credential -Type action -Pattern $pattern
+    $result[0]
+
+    Type   : Action
+    Name   : createEventDefinition
+    Path   : com.vmware.library.vcac/createEventDefinition
+    Id     : 7b359d5f-7460-424b-b811-bb9a3c9c6aba
+    Script : @{LineNumber=18; Line=// Ugly work around for having an entity created with a CreatedDateTime of type org.joda.time.LocalDateTime (bug 1033984)}
+
+    Returns the straight string match ".local"
+.EXAMPLE
+    $pattern = ".local"
+    $credential = Get-Credential -Username "vro-user" -Message "Please enter vRO Username and password"
+    [array]$result = Search-vROScriptItem -ComputerName "vro.corp.local" -Credential $credential -Type action -Pattern $pattern
+    $result[0]
+    
+    Type   : Action
+    Name   : createAzureConfigurations
+    Path   : com.vmware.vra.endpoint.azure.configuration/createAzureConfigurations
+    Id     : 0fbf7c8e-573a-4ed2-b90c-c7feb70a7e71
+    Script : {@{LineNumber=28; Line=        A_Standard_A0:  "CPU Cores (1), Memory:GiB (0.768), Local HDD:GiB (20), Max data disks(1), Max data disk throughput:IOPS (1x500), Max NICs/Network bandwidth (1/low)",}, @{LineNumber=29; Line=        A_Standard_A1:  "CPU Cores (1), Memory:GiB (1.75), Local HDD:GiB (70), Max data disks(2), Max data disk throughput:IOPS (2x500), Max NICs/Network bandwidth (1/moderate)",}, @{LineNumber=30; Line=        A_Standard_A2:  "CPU Cores (2), Memory:GiB (3.5), Local HDD:GiB (135), Max data disks(4), Max data disk throughput:IOPS (4x500), Max NICs/Network bandwidth (1/moderate)",}, @{LineNumber=31; Line=        A_Standard_A3:  "CPU Cores (4), Memory:GiB (7), Local HDD:GiB (285), Max data disks(8), Max data disk throughput:IOPS (8x500), Max NICs/Network bandwidth (2/high)",}...}
+
+    Same query with the -Regex parameter added, returns line items where the dot (.) is treated as a regex item indicating "any" character.
+
 .INPUTS
    [String]
    [Int]
    [SecureString]
    [Management.Automation.PSCredential]
+   [Switch]
 .OUTPUTS
    [PSObject]
-.Parameter ComputerName
-   The FQDN, IP address of the vRO server
 .NOTES
    Author:  Clint Fritz
-   Enhancments: Add Matches Property to the result of Action scripts.
-   Add a Type of All? Then create internal functions for getting the Action and Workflow information.
+   Enhancments: Add a Type of All? Then create internal functions for getting the Action and Workflow information.
       which would require changing the outputs for all to be the same. ie change workflow Path to be the globalTags
       plus the Workflow name and the name being the Item. or the name being the Workflow\ItemName.
    Add Case sensitivity searching
@@ -187,7 +229,7 @@ function Search-vROScriptItem
                         $hash.Name = $item.name
                         $hash.Path = $item.fqn
                         $hash.Id = $item.id
-                        $hash.Matches = $linesFound
+                        $hash.Script = $linesFound
                         $object = New-Object -TypeName PSObject -Property $hash
                         $object
                     }#end if lines pattern (regex)
@@ -203,7 +245,7 @@ function Search-vROScriptItem
                         $hash.Name = $item.name
                         $hash.Path = $item.fqn
                         $hash.Id = $item.id
-                        $hash.Matches = $linesFound
+                        $hash.Script = $linesFound
                         $object = New-Object -TypeName PSObject -Property $hash
                         $object
                     }#end if lines simplematch
@@ -260,7 +302,7 @@ function Search-vROScriptItem
                         $hash.Name = $item.name
                         $hash.Path = $item.globalTags.Replace(" ","\")
                         $hash.ItemName = "ERROR: $($_.Exception.Message)"
-                        $hash.Matches = $null
+                        $hash.Script = $null
                         $object = New-Object -TypeName PSObject -Property $hash
                         $object
                         #>
@@ -292,7 +334,7 @@ function Search-vROScriptItem
                             $hash.Name = $contentItem.'display-name'
                             $hash.Path = "$($item.globalTags.Replace(' ','\'))\$($item.name)"
                             $hash.Id = $item.Id
-                            $hash.Matches = $linesFound
+                            $hash.Script = $linesFound
                             $object = New-Object -TypeName PSObject -Property $hash
                             $object
                         }#end if lines pattern (regex)
@@ -311,7 +353,7 @@ function Search-vROScriptItem
                             $hash.Name = $contentItem.'display-name'
                             $hash.Path = "$($item.globalTags.Replace(' ','\'))\$($item.name)"
                             $hash.Id = $item.Id
-                            $hash.Matches = $linesFound
+                            $hash.Script = $linesFound
                             $object = New-Object -TypeName PSObject -Property $hash
                             $object
                         }#end if lines simplematch
