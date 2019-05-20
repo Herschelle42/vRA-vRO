@@ -1,0 +1,142 @@
+function Get-vRASoftwareComponentProperty
+<#
+.SYNOPSIS
+   Get vRA Software Component property name and values
+.DESCRIPTION
+   Gets all the Property Names and Values from Software Components.
+.PARAMETER Property
+    The name of the Property
+.PARAMETER Exact
+    Switch indicating whether the Property is an exact match (-eq). Default is 
+    false (-match).
+.EXAMPLE
+   Get-vRASoftwareComponentProperty -Property "vro_work"
+
+   SoftwareComponentName    SoftwareComponentId               Name                 Description                                                         Type    Value Encrypted Overrideable Required Computed
+   ---------------------    -------------------               ----                 -----------                                                         ----    ----- --------- ------------ -------- --------
+   dept_Account_Secrets_LNX Software.dept_Account_Secrets_LNX vro_maxExecutionTime Workflow timeout in seconds                                         INTEGER   300     False        False    False    False
+   dept_Account_Secrets_LNX Software.dept_Account_Secrets_LNX userName_009         Username after placeholder replacement                              STRING            False         True    False    False
+   dept_Account_Secrets_LNX Software.dept_Account_Secrets_LNX user_003_Password    Output Generated Password for user 3                                STRING            False        False    False     True
+   dept_Account_Secrets_LNX Software.dept_Account_Secrets_LNX accountDomain        Used to form the secret name (which becomes userName@accountDomain) STRING            False         True     True    False
+   dept_Account_Secrets_LNX Software.dept_Account_Secrets_LNX user_009_Password    Output Generated Password for user 9                                STRING            False        False    False     True
+.NOTES
+   Author: Clint Fritz
+   Tested: vRA 7.5
+   Enhancement Ideas:
+     Add Param to search for just one Software Component by Name or Id
+     Property name search to be either pattern or exact (eq vs match vs like)
+#>
+#requires -Modules PowervRA
+{
+    [CmdletBinding()]
+    Param
+    (
+        # Name of the Property to search
+        [Parameter(Mandatory=$false,
+                   ValueFromPipelineByPropertyName=$true,
+                   Position=0)]
+        [AllowEmptyString()]
+        [string]$Property,
+
+        [Parameter(Mandatory=$false)]
+        [Switch]$Exact=$false
+
+    )#end Param
+
+    Begin
+    {
+        # --- Test for existing connection to vRA
+        if (-not $Global:vRAConnection){
+
+            throw "vRA Connection variable does not exist. Please run Connect-vRAServer first to create it"
+        }
+
+        $Headers = @{
+            "Accept"="application/json";
+            "Content-Type" = "application/json";
+            "Authorization" = "Bearer $($Global:vRAConnection.Token)";
+        }
+        $method = "GET"
+
+        $uri = "$($Global:vRAConnection.Server)/software-service/api/softwarecomponenttypes?page=1&limit=100"
+        Write-Verbose "[INFO] uri: $($uri)"
+
+        $response = Invoke-RestMethod -Uri $uri -Method $method -Headers $headers -UseBasicParsing
+        $softwareComponentList = $response.content | sort name
+
+    }#end begin block
+
+    Process
+    {
+        foreach ($softwareComponent in $softwareComponentList | sort Name)
+        {
+            Write-Verbose "[INFO] $($softwareComponent.Name)"
+            $uri = "$($Global:vRAConnection.Server)/software-service/api/softwarecomponenttypes/$($softwareComponent.id)"
+            $scObject = Invoke-RestMethod -Uri $uri -Method $method -Headers $headers -UseBasicParsing
+
+            #Exclude ref fields as they appear to be vRA internal properties
+            foreach ($field in $scObject.schema.fields | ? { $_.dataType.type -ne "ref" })
+            {
+                Write-Verbose "[INFO] Field Label: $($field.label)"
+
+                #will collect all if _no_ Property is specified
+                if($field.label -match $Property)
+                {
+
+                    $hash = [ordered]@{}
+                    $hash.SoftwareComponentName = $scObject.name
+                    $hash.SoftwareComponentId = $scObject.id
+                    $hash.Name = $field.label
+                    $hash.Description = $field.description
+                    $hash.Type = $field.dataType.typeId
+
+                    $hash.Value = ($field.state.facets | ? { $_.type -match "derivedValue|defaultValue"}).value.value.value
+
+                    #Determine if Property is encrypted or not
+                    if ($field.dataType.typeId -eq "SECURE_STRING")
+                    {
+                        $hash.Encrypted = $true
+                    } else {
+                        $hash.Encrypted = $false
+                    }#end if Encrypted
+
+                    #if defaultValue then Property is overridable, if derivedValue it is not.
+                    if ($field.state.facets | ? { $_.type -eq "defaultValue"})
+                    {
+                        $hash.Overrideable = $true
+                    } else {
+                        $hash.Overrideable = $false
+                    }#end if defaultValue
+
+                    #Required (Mandatory) T/F
+                    if (($field.state.facets | ? { $_.type -eq "mandatory"}).value.value.value)
+                    {
+                        $hash.Required = $true
+                    } else {
+                        $hash.Required = $false
+                    }#end if Required
+
+                    #Computed T/F
+                    if ($field.state.facets | ? { $_.type -eq "editable"})
+                    {
+                        $hash.Computed = $true
+                    } else {
+                        $hash.Computed = $false
+                    }#end if Computed
+
+                    $object = New-Object PSObject -Property $hash
+                    $object
+
+                }#end if matching Property name
+
+            }#end foreach Field
+
+        }#end foreach SoftwareComponent
+
+    }#end Process block
+
+    End
+    { 
+    }#end End block
+
+}#end Function
