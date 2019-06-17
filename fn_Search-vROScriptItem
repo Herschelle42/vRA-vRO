@@ -70,44 +70,35 @@ function Search-vROScriptItem
 [CmdletBinding()]
     Param
     (
-        #Protocol to use. http / https. Default is https.
         [Parameter(Mandatory=$false)]
         [ValidateSet("https","http")]
         [string]$Protocol="https",
 
-        #Name, FQDN or IP address of vRO server
         [Parameter(Mandatory=$true)]
         [Alias("Server","IPAddress","FQDN")]
         [string]$ComputerName,
 
-        #The port for the API.
         [Parameter(Mandatory=$false)]
         [ValidatePattern("^[1-9][0-9]{0,4}$")]
         [int]$Port,
 
-        #Username to access
         [Parameter(Mandatory=$true,ParameterSetName="Username")]
         [string]$Username,
 
-        #Password of user
         [Parameter(Mandatory=$true,ParameterSetName="Username")]
         [SecureString]$Password,
 
-        #Credential object
         [Parameter(Mandatory=$true,ParameterSetName="Credential")]
         [ValidateNotNullOrEmpty()]
         [Management.Automation.PSCredential]$Credential,
 
-        #Object type to search. Only Action at this point. Look to expand to cover others later, if possible
         [Parameter(Mandatory=$true)]
         [ValidateSet("action","workflow")]
         [string]$Type,
 
-        #String Pattern to search.
         [Parameter(Mandatory=$true)]
         [String]$Pattern,
 
-        #indicate whether the Pattern should be treated as regex pattern. Default is false
         [Parameter(Mandatory=$false)]
         [Switch]$Regex=$false
         
