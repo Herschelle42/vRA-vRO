@@ -1,37 +1,53 @@
 function Get-vRASoftwareComponentProperty
+{
 <#
 .SYNOPSIS
    Get vRA Software Component property name and values
 .DESCRIPTION
    Gets all the Property Names and Values from Software Components.
 .PARAMETER Property
-    The name of the Property
+    The name of the Property, or part of the name of the Property to search for
 .PARAMETER Exact
     Switch indicating whether the Property is an exact match (-eq). Default is 
     false (-match).
 .EXAMPLE
-   Get-vRASoftwareComponentProperty -Property "vro_work"
+   PS> Get-vRASoftwareComponentProperty -Property "vro_work"
 
-   SoftwareComponentName    SoftwareComponentId               Name                 Description                                                         Type    Value Encrypted Overrideable Required Computed
-   ---------------------    -------------------               ----                 -----------                                                         ----    ----- --------- ------------ -------- --------
-   dept_Account_Secrets_LNX Software.dept_Account_Secrets_LNX vro_maxExecutionTime Workflow timeout in seconds                                         INTEGER   300     False        False    False    False
-   dept_Account_Secrets_LNX Software.dept_Account_Secrets_LNX userName_009         Username after placeholder replacement                              STRING            False         True    False    False
-   dept_Account_Secrets_LNX Software.dept_Account_Secrets_LNX user_003_Password    Output Generated Password for user 3                                STRING            False        False    False     True
-   dept_Account_Secrets_LNX Software.dept_Account_Secrets_LNX accountDomain        Used to form the secret name (which becomes userName@accountDomain) STRING            False         True     True    False
-   dept_Account_Secrets_LNX Software.dept_Account_Secrets_LNX user_009_Password    Output Generated Password for user 9                                STRING            False        False    False     True
+    SoftwareComponentName       SoftwareComponentId                 Name             Description                   Type   Value                                Encrypted Overrideable Required Computed
+    ---------------------       -------------------                 ----             -----------                   ----   -----                                --------- ------------ -------- --------
+    Account_Secrets_LNX         Software.Account_Secrets_LNX        vro_workflowId   ID of the workflow to run     STRING 1511572d-7d9d-4b50-a9c5-0db8fa8ec121     False        False    False    False
+    AD_Service_Account_LNX      Software.AD_Service_Account_LNX     vro_workflowName Name of the workflow to run   STRING dept_AD_Service_Account                  False        False     True    False
+
+    Finds all Software Component Properties with "vro_work" in the name
+
+.EXAMPLE
+   PS> $workflowList = Get-vRASoftwareComponentProperty -Property "vro_work" | Sort Value | Select Value -Unique
+
+   Value                               
+   -----
+   025897e6-919a-4b55-96d6-9cefdbcc3d1c
+   b1a859ab-c989-40b0-95c4-ee9589c3ce40
+   bc66eae3-1787-47f3-900e-9fd1489d0af4
+   dept_Account_Secrets                
+   dept_AD_Service_Account             
+   dept_FMW_Install                    
+   dept_vCenter_Create_DRS_Rules       
+   f40948e9-0356-4735-9a77-9e73631fa876
+
+   Finds and reports the unique values for Software Component Properties that match "vro_name"
+
 .NOTES
    Author: Clint Fritz
-   Tested: vRA 7.5
+   Created On: vRA 7.5
    Enhancement Ideas:
      Add Param to search for just one Software Component by Name or Id
      Property name search to be either pattern or exact (eq vs match vs like)
+     Add Param for regex search of Values? -Value (string) -Regex (switch)
 #>
 #requires -Modules PowervRA
-{
     [CmdletBinding()]
     Param
     (
-        # Name of the Property to search
         [Parameter(Mandatory=$false,
                    ValueFromPipelineByPropertyName=$true,
                    Position=0)]
