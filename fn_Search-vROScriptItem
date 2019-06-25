@@ -18,7 +18,7 @@ function Search-vROScriptItem
 .PARAMETER Credential
     The powershell Credential object to use to connect to vRO
 .PARAMETER Type
-    The vRO object type to search. Valid values are action\workflow. Mandatory.
+    The vRO object type to search. Valid values are action\workflow\all. Mandatory.
 .PARAMETER Pattern
     The text string or regex pattern to search for.
 .PARAMETER Regex
@@ -61,10 +61,8 @@ function Search-vROScriptItem
    [PSObject]
 .NOTES
    Author:  Clint Fritz
-   Enhancments: Add a Type of All? Then create internal functions for getting the Action and Workflow information.
-      which would require changing the outputs for all to be the same. ie change workflow Path to be the globalTags
-      plus the Workflow name and the name being the Item. or the name being the Workflow\ItemName.
-   Add Case sensitivity searching
+   Enhancments ideas: 
+   - Add Case sensitivity searching
 
 #>
 [CmdletBinding()]
@@ -93,7 +91,7 @@ function Search-vROScriptItem
         [Management.Automation.PSCredential]$Credential,
 
         [Parameter(Mandatory=$true)]
-        [ValidateSet("action","workflow")]
+        [ValidateSet("workflow","action","all")]
         [string]$Type,
 
         [Parameter(Mandatory=$true)]
@@ -108,7 +106,7 @@ function Search-vROScriptItem
     {
         [string]$method="GET"
 
-        Write-Verbose "[INFO] Protocl: $($Protocol)"
+        Write-Verbose "[INFO] Protocol: $($Protocol)"
         Write-Verbose "[INFO] ComputerName: $($ComputerName)"
         Write-Verbose "[INFO] Port: $($Port)"
 
@@ -121,7 +119,7 @@ function Search-vROScriptItem
         
         if ($PSBoundParameters.ContainsKey("Password")){
             Write-Verbose "[INFO] Username: $($Username)"
-            Write-Verbose "[INFO] Password: $($Password)"
+            #Write-Verbose "[INFO] Password: $($Password)"
             $UnsecurePassword = (New-Object System.Management.Automation.PSCredential(“username”, $Password)).GetNetworkCredential().Password
         }
 
@@ -169,43 +167,60 @@ function Search-vROScriptItem
             [System.Net.ServicePointManager]::SecurityProtocol += [System.Net.SecurityProtocolType]::Tls12
         }#end if tls12
 
-
-    }#end Begin block
-
-    Process
-    {
-        #--- Search Actions ---------------------------------------------------
-        if ($Type -eq "action")
+        function intGet-ActionScripts
         {
             Write-Verbose "[INFO] Get Actions"
 
             $uri = "$($apiUri)/actions"
-            Write-Verbose "[INFO] Connect to vRO and collect all actions"
             $result = $null
             $result = Invoke-RestMethod -Method $method -UseBasicParsing -Uri $uri -Headers $headers
 
             Write-Verbose "[INFO] Create a new flat custom object for easier manipulation"
-            $action = $null
-            $actionList = foreach ($action in $result.link){
+            $item = $null
+            $itemList = foreach ($item in $result.link){
     
                 $hash = [ordered]@{}
-                foreach ($attrib in $action.attributes)
+                foreach ($attrib in $item.attributes)
                 {
                     $hash.$($attrib.name) = $($attrib.value)
                 }#end foreach attrib
-                $hash.href = $action.href
-                $hash.rel = $action.rel
+                $hash.href = $item.href
+                $hash.rel = $item.rel
+				$hash.Script = $null
                 $object = new-object PSObject -property $hash 
                 $object
   
             }#end foreach action
 
-            Write-Verbose "[INFO] Get each Action script"
+            Write-Verbose "[INFO] Get each script element"
             $item = $null
-            foreach ($item in $actionList)
+            foreach ($item in $itemList)
             {
                 Write-Verbose "[INFO] Action: $($item.name)"
-                $result = Invoke-RestMethod -Method $method -UseBasicParsing -Uri $item.href -Headers $headers
+                try {
+                    $result = $null
+                    $result = Invoke-RestMethod -Method $method -UseBasicParsing -Uri "$($item.href)" -Headers $headers
+                } catch [System.Net.WebException] {
+        
+                    if ($($_.Exception.Message) -eq "The remote server returned an error: (400) Bad Request." )
+                    {
+                        Write-Verbose "[ERROR] !!! $($_.Exception.Message)"
+                        <# Undecided how we surface this up.
+                        $hash=[ordered]@{}
+                        $hash.Name = $item.name
+                        $hash.Path = $item.globalTags.Replace(" ","\")
+                        $hash.ItemName = "ERROR: $($_.Exception.Message)"
+                        $hash.Script = $null
+                        $object = New-Object -TypeName PSObject -Property $hash
+                        $object
+                        #>
+                    } else {
+                        throw
+                    }
+
+                } catch {
+                    throw
+                }#end try catch
 
                 #Is this a regex search or a simple text search.
                 if ($regex) 
@@ -245,17 +260,15 @@ function Search-vROScriptItem
 
             }#end foreach item
 
-        }#end if Type action
+        }#end function intGet-ActionScripts
 
-        #--- Search Workflows -------------------------------------------------
-        if ($Type -eq "workflow")
+        function intGet-WorkflowScripts
         {
             Write-Verbose "[INFO] Get Workflows"
 
             $uri = "$($apiUri)/workflows?maxResult=2147483647&startIndex=0&queryCount=false"
             $result = $null
             $result = Invoke-RestMethod -Method $method -UseBasicParsing -Uri $uri -Headers $headers
-            #$result
 
             Write-Verbose "[INFO] Create a new flat custom object for easier manipulation"
             $item = $null
@@ -274,8 +287,7 @@ function Search-vROScriptItem
   
             }#end foreach action
 
-
-            Write-Verbose "[INFO] Get each Workflow subcomponent script block"
+            Write-Verbose "[INFO] Get each script element"
             $item = $null
             foreach ($item in $itemList)
             {
@@ -319,9 +331,6 @@ function Search-vROScriptItem
                             Write-Verbose "[INFO] Lines found: $($linesFound.count)"
                             $hash=[ordered]@{}
                             $hash.Type="Workflow-$($contentItem.type)"
-                            #$hash.Name = $item.name
-                            #$hash.Path = $item.globalTags.Replace(" ","\")
-                            #$hash.ItemName = $contentItem.'display-name'
                             $hash.Name = $contentItem.'display-name'
                             $hash.Path = "$($item.globalTags.Replace(' ','\'))\$($item.name)"
                             $hash.Id = $item.Id
@@ -338,9 +347,6 @@ function Search-vROScriptItem
                             Write-Verbose "[INFO] Lines found: $($linesFound.count)"
                             $hash=[ordered]@{}
                             $hash.Type="Workflow-$($contentItem.type)"
-                            #$hash.Name = $item.name
-                            #$hash.Path = $item.globalTags.Replace(" ","\")
-                            #$hash.ItemName = $contentItem.'display-name'
                             $hash.Name = $contentItem.'display-name'
                             $hash.Path = "$($item.globalTags.Replace(' ','\'))\$($item.name)"
                             $hash.Id = $item.Id
@@ -355,6 +361,29 @@ function Search-vROScriptItem
 
             }#end foreach item
 
+        }#end function intGet-WorkflowScripts
+
+    }#end Begin block
+
+    Process
+    {
+        #--- Search Actions ---------------------------------------------------
+        if ($Type -eq "action")
+        {
+            intGet-ActionScripts
+        }#end if Type action
+
+        #--- Search Workflows -------------------------------------------------
+        if ($Type -eq "workflow")
+        {
+            intGet-WorkflowScripts
+        }#end if type workflow
+
+        #--- Search both workflows and actions --------------------------------
+        if ($Type -eq "all")
+        {
+            intGet-ActionScripts
+            intGet-WorkflowScripts
         }#end if type workflow
         
     }#end Process block
