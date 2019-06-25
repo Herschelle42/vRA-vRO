@@ -18,7 +18,7 @@ function Search-vROScriptItem
 .PARAMETER Credential
     The powershell Credential object to use to connect to vRO
 .PARAMETER Type
-    The vRO object type to search. Valid values are action\workflow\all. Mandatory.
+    The vRO object type to search. Valid values are action\workflow\all. Default is all.
 .PARAMETER Pattern
     The text string or regex pattern to search for.
 .PARAMETER Regex
@@ -90,9 +90,9 @@ function Search-vROScriptItem
         [ValidateNotNullOrEmpty()]
         [Management.Automation.PSCredential]$Credential,
 
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory=$false)]
         [ValidateSet("workflow","action","all")]
-        [string]$Type,
+        [string]$Type="all",
 
         [Parameter(Mandatory=$true)]
         [String]$Pattern,
@@ -124,17 +124,6 @@ function Search-vROScriptItem
         }
 
         Write-Verbose "[INFO] Type: $($Type)"
-
-        #If not a regex pattern, then escape it so that regex characters are escaped.
-        #for example fullstop . in regex is any character. espacing it means to search for the fullstop character itself.
-        <#
-        if (-not $regex)
-        {
-            $Pattern = [regex]::Escape($Pattern)
-        }
-        No longer required as using the Select-String and parameters rather than -match
-        #>
-
         Write-Verbose "[INFO] Pattern: $($Pattern)"
         Write-Verbose "[INFO] Regex: $($Regex)"
         
