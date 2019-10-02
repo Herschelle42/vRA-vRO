@@ -52,7 +52,7 @@ Param(
     $headers.Add("Content-Type", 'application/json')
 
     $method = "POST"
-    $uri = "https://$($vRAServer)/identity/api/tokens"
+    $uri = "https://$($ComputerName)/identity/api/tokens"
 
     #--- generate token for vRA REST requests ------------------------------
 
@@ -72,7 +72,6 @@ Param(
     $headers.Add("Authorization", "Bearer $($bearer_token)")
 
     #Create a new global variable and return to user
-    #New-Variable -Name credATONet -Value $(Get-Credential -Message "ATOnet Credentials" -UserName $userATONet) -Scope global
     try
     {
         $capture = New-Variable -Name $VariableName -Value $headers -Scope Global
