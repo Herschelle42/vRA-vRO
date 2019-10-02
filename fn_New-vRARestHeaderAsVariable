@@ -1,0 +1,85 @@
+function New-vRARestHeaderAsVariable
+{
+<#
+.SYNOPSIS
+  Create a variable of a vRA rest header to use with API requests.
+.OUTPUT
+  [System.Array]
+.EXAMPLE
+  PS> New-vRARestHeaderAsVariable -ComputerName vra1.corp.local -Credential (Get-Credential) -VariableName "vraHeader"
+  PS> $vraHeader
+  Key           Value                                                                                                         
+  ---           -----                                                                                                         
+  Accept        application/json                                                                                              
+  Content-Type  application/json                                                                                              
+  Authorization Bearer MTU2OTk3NzY0MTgzMDo1MGQxYjA5NDRlYjc5ZTc0ZjYzZjp0ZW5hbnQ6dnNwaGVyZS5sb2NhbHVzZXJuYW1lOnVjenhrQHByb2Qu...
+
+  PS> Invoke-RestMethod -Uri "https://vra.corp.local/catalog-service/api/catalogItems?limit=10" -Method "GET" -Headers $vraHeader
+.NOTES
+  todo: add username and password parameters?
+#>
+Param(
+    #vRA server 
+    [Parameter(Mandatory,Position=0,ValueFromPipeline,ValueFromPipelineByPropertyName)]
+    [Alias('CN','__SERVER','IPAddress','Server')]
+    [System.String]
+    $ComputerName,
+    #The Credential object to use for the username and password
+    [Parameter(Mandatory)]
+    [Management.Automation.PSCredential]
+    $Credential,
+    #The name of the variable to be created
+    [Parameter(Mandatory)]
+    [ValidatePattern("[a-zA-Z\-]*")]
+    [System.String]
+    $VariableName
+)
+
+    #--- generic body setup -----------------------
+
+    $Username = $credential.username
+    $Password = $credential.getnetworkcredential().Password
+    $tenant = "vsphere.local"
+
+    $body = @{
+        username = $Username
+        password = $Password
+        tenant = $tenant
+    } | ConvertTo-Json
+
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $headers.Add("Accept", 'application/json')
+    $headers.Add("Content-Type", 'application/json')
+
+    $method = "POST"
+    $uri = "https://$($vRAServer)/identity/api/tokens"
+
+    #--- generate token for vRA REST requests ------------------------------
+
+    try
+    {
+        $response = $null
+        $response = Invoke-RestMethod -Method $method -Uri $uri -Headers $headers -Body $body
+    }
+    catch 
+    {
+        Write-Output "StatusCode:" $_.Exception.Response.StatusCode.value__
+        throw
+    }
+
+    #Add the retrieve Bearer token to the headers
+    $bearer_token = $response.id
+    $headers.Add("Authorization", "Bearer $($bearer_token)")
+
+    #Create a new global variable and return to user
+    #New-Variable -Name credATONet -Value $(Get-Credential -Message "ATOnet Credentials" -UserName $userATONet) -Scope global
+    try
+    {
+        $capture = New-Variable -Name $VariableName -Value $headers -Scope Global
+    }
+    catch
+    {
+        throw
+    }#end if try
+
+}#end function
