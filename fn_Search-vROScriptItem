@@ -120,15 +120,17 @@ function Search-vROScriptItem
         if ($PSBoundParameters.ContainsKey("Password")){
             Write-Verbose "[INFO] Username: $($Username)"
             #Write-Verbose "[INFO] Password: $($Password)"
-            $UnsecurePassword = (New-Object System.Management.Automation.PSCredential(“username”, $Password)).GetNetworkCredential().Password
+            $UnsecurePassword = (New-Object System.Management.Automation.PSCredential('username', $Password)).GetNetworkCredential().Password
         }
+
+        Write-Verbose "[INFO] Username: $($Username)"
+        #Write-Verbose "insecure: $($UnsecurePassword)"
 
         Write-Verbose "[INFO] Type: $($Type)"
         Write-Verbose "[INFO] Pattern: $($Pattern)"
         Write-Verbose "[INFO] Regex: $($Regex)"
         
         #--- Create authorization headers
-        #Write-Verbose "insecure: $($UnsecurePassword)"
         $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $Username,$UnsecurePassword)))
         $headers = @{"Authorization"=("Basic {0}" -f $base64AuthInfo)}
         #$headers = @{"Content-Type"="application/json"; "Accept"="application/json"; "Authorization"=("Basic {0}" -f $base64AuthInfo)}
@@ -353,6 +355,7 @@ function Search-vROScriptItem
 
     Process
     {
+
         #--- Search Actions ---------------------------------------------------
         if ($Type -eq "action")
         {
