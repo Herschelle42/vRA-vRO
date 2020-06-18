@@ -40,7 +40,7 @@ function Search-vROScriptItem
 .EXAMPLE
     $pattern = ".local"
     $credential = Get-Credential -Username "vro-user" -Message "Please enter vRO Username and password"
-    [array]$result = Search-vROScriptItem -ComputerName "vro.corp.local" -Credential $credential -Type action -Pattern $pattern
+    [array]$result = Search-vROScriptItem -ComputerName "vro.corp.local" -Credential $credential -Type action -Regex $pattern
     $result[0]
     
     Type   : Action
@@ -154,7 +154,7 @@ function Search-vROScriptItem
         {
             Write-Verbose "[INFO] Adding Tls 1.2 to security protocol"
             [System.Net.ServicePointManager]::SecurityProtocol += [System.Net.SecurityProtocolType]::Tls12
-        }#end if tls12
+        }
 
         function intGet-ActionScripts
         {
@@ -179,7 +179,7 @@ function Search-vROScriptItem
                 $object = new-object PSObject -property $hash 
                 $object
   
-            }#end foreach action
+            }
 
             Write-Verbose "[INFO] Get each script element"
             $item = $null
@@ -209,7 +209,7 @@ function Search-vROScriptItem
 
                 } catch {
                     throw
-                }#end try catch
+                }
 
                 #Is this a regex search or a simple text search.
                 if ($regex) 
@@ -227,7 +227,7 @@ function Search-vROScriptItem
                         $hash.Script = $linesFound
                         $object = New-Object -TypeName PSObject -Property $hash
                         $object
-                    }#end if lines pattern (regex)
+                    }
 
                 } else {
                     Write-Verbose "[INFO] Simple search"
@@ -243,13 +243,10 @@ function Search-vROScriptItem
                         $hash.Script = $linesFound
                         $object = New-Object -TypeName PSObject -Property $hash
                         $object
-                    }#end if lines simplematch
-
-                }#end if regex
-
-            }#end foreach item
-
-        }#end function intGet-ActionScripts
+                    }
+                }
+            }
+        }
 
         function intGet-WorkflowScripts
         {
@@ -274,7 +271,7 @@ function Search-vROScriptItem
                 $object = new-object PSObject -property $hash 
                 $object
   
-            }#end foreach action
+            }
 
             Write-Verbose "[INFO] Get each script element"
             $item = $null
@@ -304,7 +301,7 @@ function Search-vROScriptItem
 
                 } catch {
                     throw
-                }#end try catch
+                }
 
                 foreach ($contentItem in $wfContent.'workflow-item' | ? { $_.Script } )
                 {
@@ -326,7 +323,7 @@ function Search-vROScriptItem
                             $hash.Script = $linesFound
                             $object = New-Object -TypeName PSObject -Property $hash
                             $object
-                        }#end if lines pattern (regex)
+                        }
 
                     } else {
                         Write-Verbose "[INFO] Simple search"
@@ -342,17 +339,17 @@ function Search-vROScriptItem
                             $hash.Script = $linesFound
                             $object = New-Object -TypeName PSObject -Property $hash
                             $object
-                        }#end if lines simplematch
+                        }
 
-                    }#end if regex
+                    }
                     
-                }#end foreach contentItem
+                }
+		
+            }
 
-            }#end foreach item
+        }
 
-        }#end function intGet-WorkflowScripts
-
-    }#end Begin block
+    }
 
     Process
     {
@@ -360,25 +357,24 @@ function Search-vROScriptItem
         if ($Type -eq "action")
         {
             intGet-ActionScripts
-        }#end if Type action
+        }
 
         #--- Search Workflows -------------------------------------------------
         if ($Type -eq "workflow")
         {
             intGet-WorkflowScripts
-        }#end if type workflow
+        }
 
         #--- Search both workflows and actions --------------------------------
         if ($Type -eq "all")
         {
             intGet-ActionScripts
             intGet-WorkflowScripts
-        }#end if type workflow
+        }
         
-    }#end Process block
+    }
 
     End
     {
-    }#end End block
-
-}#end Function
+    }
+}
