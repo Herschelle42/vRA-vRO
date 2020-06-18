@@ -40,7 +40,7 @@ function Search-vROScriptItem
 .EXAMPLE
     $pattern = ".local"
     $credential = Get-Credential -Username "vro-user" -Message "Please enter vRO Username and password"
-    [array]$result = Search-vROScriptItem -ComputerName "vro.corp.local" -Credential $credential -Type action -Regex $pattern
+    [array]$result = Search-vROScriptItem -ComputerName "vro.corp.local" -Credential $credential -Type action -Pattern $pattern -Regex
     $result[0]
     
     Type   : Action
@@ -65,14 +65,14 @@ function Search-vROScriptItem
    - Add Case sensitivity searching
 
 #>
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName="ByCredential")]
     Param
     (
         [Parameter(Mandatory=$false)]
         [ValidateSet("https","http")]
         [string]$Protocol="https",
 
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory)]
         [Alias("Server","IPAddress","FQDN")]
         [string]$ComputerName,
 
@@ -80,13 +80,13 @@ function Search-vROScriptItem
         [ValidatePattern("^[1-9][0-9]{0,4}$")]
         [int]$Port,
 
-        [Parameter(Mandatory=$true,ParameterSetName="Username")]
+        [Parameter(Mandatory,ParameterSetName="ByUsername")]
         [string]$Username,
 
-        [Parameter(Mandatory=$true,ParameterSetName="Username")]
+        [Parameter(Mandatory,ParameterSetName="ByUsername")]
         [SecureString]$Password,
 
-        [Parameter(Mandatory=$true,ParameterSetName="Credential")]
+        [Parameter(Mandatory,ParameterSetName="ByCredential")]
         [ValidateNotNullOrEmpty()]
         [Management.Automation.PSCredential]$Credential,
 
@@ -94,7 +94,7 @@ function Search-vROScriptItem
         [ValidateSet("workflow","action","all")]
         [string]$Type="all",
 
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory)]
         [String]$Pattern,
 
         [Parameter(Mandatory=$false)]
