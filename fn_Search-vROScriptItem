@@ -188,6 +188,7 @@ function Search-vROScriptItem
             foreach ($item in $itemList)
             {
                 Write-Verbose "[INFO] Action: $($item.name)"
+                Write-Verbose "[INFO] Path: $($item.fqn)"
                 try {
                     $result = $null
                     $result = Invoke-RestMethod -Method $method -UseBasicParsing -Uri "$($item.href)" -Headers $headers
@@ -217,34 +218,55 @@ function Search-vROScriptItem
                 if ($regex) 
                 {
                     Write-Verbose "[INFO] Regex search"
-
-                    if ($linesFound = $result.script.Split("`r`n") | Select-String -Pattern $pattern | Select LineNumber, Line)
-                    {
-                        Write-Verbose "[INFO] Lines found: $($linesFound.count)"
-                        $hash=[ordered]@{}
-                        $hash.Type="Action"
-                        $hash.Name = $item.name
-                        $hash.Path = $item.fqn
-                        $hash.Id = $item.id
-                        $hash.Script = $linesFound
-                        $object = New-Object -TypeName PSObject -Property $hash
-                        $object
+                    try {
+                        if ($linesFound = $result.script.Split("`r`n") | Select-String -Pattern $pattern | Select LineNumber, Line)
+                        {
+                            Write-Verbose "[INFO] Lines found: $($linesFound.count)"
+                            $hash=[ordered]@{}
+                            $hash.Type="Action"
+                            $hash.Name = $item.name
+                            $hash.Path = $item.fqn
+                            $hash.Id = $item.id
+                            $hash.Script = $linesFound
+                            $object = New-Object -TypeName PSObject -Property $hash
+                            $object
+                        }
+                    #Catch when the item is empty
+                    } catch [System.Management.Automation.RuntimeException] {
+                        if ($_.exception.message -match "You cannot call a method on a null-valued expression.") {
+                            Write-Verbose "[INFO] Contains no script."
+                        } else {
+                            throw
+                        }
+                    } catch {
+                        throw
                     }
 
                 } else {
                     Write-Verbose "[INFO] Simple search"
 
-                    if ($linesFound = $result.script.Split("`r`n") | Select-String -SimpleMatch $pattern | Select LineNumber, Line)
-                    {
-                        Write-Verbose "[INFO] Lines found: $($linesFound.count)"
-                        $hash=[ordered]@{}
-                        $hash.Type="Action"
-                        $hash.Name = $item.name
-                        $hash.Path = $item.fqn
-                        $hash.Id = $item.id
-                        $hash.Script = $linesFound
-                        $object = New-Object -TypeName PSObject -Property $hash
-                        $object
+                    try {
+                        if ($linesFound = $result.script.Split("`r`n") | Select-String -SimpleMatch $pattern | Select LineNumber, Line)
+                        {
+                            Write-Verbose "[INFO] Lines found: $($linesFound.count)"
+                            $hash=[ordered]@{}
+                            $hash.Type="Action"
+                            $hash.Name = $item.name
+                            $hash.Path = $item.fqn
+                            $hash.Id = $item.id
+                            $hash.Script = $linesFound
+                            $object = New-Object -TypeName PSObject -Property $hash
+                            $object
+                        }
+                    #Catch when the item is empty
+                    } catch [System.Management.Automation.RuntimeException] {
+                        if ($_.exception.message -match "You cannot call a method on a null-valued expression.") {
+                            Write-Verbose "[INFO] Contains no script."
+                        } else {
+                            throw
+                        }
+                    } catch {
+                        throw
                     }
                 }
             }
@@ -307,42 +329,63 @@ function Search-vROScriptItem
 
                 foreach ($contentItem in $wfContent.'workflow-item' | ? { $_.Script } )
                 {
-                    Write-Verbose "[INFO] ItemName: $($contentItem.'display-name')"
+                    Write-Verbose "[INFO] Item Name: $($contentItem.'display-name')"
+                    $itemPath = "$($item.globalTags.Replace(' ','\'))\$($item.name)"
+                    Write-Verbose "[INFO] Item Path: $($itemPath)"
         
                     #Is this a regex search or a simple text search.
                     if ($regex) 
                     {
                         Write-Verbose "[INFO] Regex search"
-
-                        if ($linesFound = $contentItem.script.value.Split("`r`n") | Select-String -Pattern $pattern | Select LineNumber, Line)
-                        {
-                            Write-Verbose "[INFO] Lines found: $($linesFound.count)"
-                            $hash=[ordered]@{}
-                            $hash.Type="Workflow-$($contentItem.type)"
-                            $hash.Name = $contentItem.'display-name'
-                            $hash.Path = "$($item.globalTags.Replace(' ','\'))\$($item.name)"
-                            $hash.Id = $item.Id
-                            $hash.Script = $linesFound
-                            $object = New-Object -TypeName PSObject -Property $hash
-                            $object
+                        try {
+                            if ($linesFound = $contentItem.script.value.Split("`r`n") | Select-String -Pattern $pattern | Select LineNumber, Line)
+                            {
+                                Write-Verbose "[INFO] Lines found: $($linesFound.count)"
+                                $hash=[ordered]@{}
+                                $hash.Type="Workflow-$($contentItem.type)"
+                                $hash.Name = $contentItem.'display-name'
+                                $hash.Path = $itemPath
+                                $hash.Id = $item.Id
+                                $hash.Script = $linesFound
+                                $object = New-Object -TypeName PSObject -Property $hash
+                                $object
+                            }
+                        #Catch when the item is empty
+                        } catch [System.Management.Automation.RuntimeException] {
+                            if ($_.exception.message -match "You cannot call a method on a null-valued expression.") {
+                                Write-Verbose "[INFO] Contains no script."
+                            } else {
+                                throw
+                            }
+                        } catch {
+                            throw
                         }
 
                     } else {
                         Write-Verbose "[INFO] Simple search"
-
-                        if ($linesFound = $contentItem.script.value.Split("`r`n") | Select-String -SimpleMatch $pattern | Select LineNumber, Line)
-                        {
-                            Write-Verbose "[INFO] Lines found: $($linesFound.count)"
-                            $hash=[ordered]@{}
-                            $hash.Type="Workflow-$($contentItem.type)"
-                            $hash.Name = $contentItem.'display-name'
-                            $hash.Path = "$($item.globalTags.Replace(' ','\'))\$($item.name)"
-                            $hash.Id = $item.Id
-                            $hash.Script = $linesFound
-                            $object = New-Object -TypeName PSObject -Property $hash
-                            $object
+                        try {
+                            if ($linesFound = $contentItem.script.value.Split("`r`n") | Select-String -SimpleMatch $pattern | Select LineNumber, Line)
+                            {
+                                Write-Verbose "[INFO] Lines found: $($linesFound.count)"
+                                $hash=[ordered]@{}
+                                $hash.Type="Workflow-$($contentItem.type)"
+                                $hash.Name = $contentItem.'display-name'
+                                $hash.Path = $itemPath
+                                $hash.Id = $item.Id
+                                $hash.Script = $linesFound
+                                $object = New-Object -TypeName PSObject -Property $hash
+                                $object
+                            }
+                        #Catch when the item is empty
+                        } catch [System.Management.Automation.RuntimeException] {
+                            if ($_.exception.message -match "You cannot call a method on a null-valued expression.") {
+                                Write-Verbose "[INFO] Contains no script."
+                            } else {
+                                throw
+                            }
+                        } catch {
+                            throw
                         }
-
                     }
                     
                 }
