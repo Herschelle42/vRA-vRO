@@ -279,34 +279,6 @@ Process {
 
         #endregion ---------------------
 
-
-        #region ---- Gather all the data and create output ----------------
-
-        <#
-        foreach ($compRequest in $comprequestList) {
-    
-            #trace up the line to get BPRequest and cat_request
-
-            $hash = [ordered]@{}
-            $hash.Name = $DeploymentName
-            $hash.RequestNumber = 
-            $hash.BPRequestId = 
-            $hash.BPRequestStatus = 
-            $hash.CompRequestId = 
-            $hash.CompRequestStatus =
-            $object = New-Object PSObject -Property $hash
-            $object
-    
-        }
-
-
-        foreach ($bprequest in $bprequestList | ? { $_.status -notmatch $ExcludeCompRequestStatus }) {
-        
-        }
-        #>
-
-
-        #endregion -------------------
     }
 
     if ($PSCmdlet.ParameterSetName -eq "Request") {
