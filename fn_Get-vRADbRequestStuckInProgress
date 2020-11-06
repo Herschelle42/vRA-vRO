@@ -1,0 +1,404 @@
+function Get-vRADbRequestStuckInProgress {
+<#
+.SYNOPSIS
+  Get all the vRA Postgres DB request, bprequest and comprequest still in progress
+.NOTES
+  vRA Version: 7.4
+  Author: Clint Fritz
+  TODO: Add RequestNumber parameter functionality
+        Make Name an array, and add array functionality and output
+
+
+.EXAMPLE
+  $Name = "ISF.AWS.V1.BaseW2k12-77788877"
+  $computerName = "vra1.corp.local"
+  $Credential = $cred_vra_root
+  Get-vRARequestStuckInProgress -Name $Name -ComputerName $computerName -Credential $Credential
+
+.EXAMPLE
+  $RequestNumber = 216478
+  $computerName = "vra1.corp.local"
+  $Credential = $cred_vra_root
+  Get-vRADbRequestStuckInProgress -RequestNumber $RequestNumber -ComputerName $computerName -Credential $Credential
+
+
+#>
+
+
+
+[CmdletBinding(DefaultParameterSetName='Name')]
+Param (
+    #The name of the Parent Deployment resource. Only supports top level resources at this time.
+    [Parameter(ParameterSetName='Name',
+            Mandatory=$true,
+            ValueFromPipelineByPropertyName=$true,
+            Position=0)]
+    [Alias("ResourceName")]
+    [string]$Name,
+
+    #The name of the Parent Deployment resource. Only supports top level resources at this time.
+    [Parameter(ParameterSetName='Request',
+            Mandatory=$true,
+            ValueFromPipelineByPropertyName=$true,
+            Position=0)]
+    [int[]]$RequestNumber,
+
+    #vRA Server
+    [Parameter(Mandatory)]
+    [Alias('CN','__SERVER',"Server","IPAddress","Hostname","FQDN")]
+    [string]$ComputerName,
+
+    #vRA appliance account that has permission to connect via SSH and run postgres queries
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
+    [Management.Automation.PSCredential]$Credential,
+
+    #Path to putty plink.exe
+    [Parameter(Mandatory=$false)]
+    [string]$plinkEXEPath = "C:\Program Files\Putty\plink.exe",
+
+    #cat_request States to exclude reporting
+    [Parameter(Mandatory=$false)]
+    [string]$ExcludeRequestState = 'SUCCESSFUL|PROVIDER_FAILED|FAILED',
+
+    #cat_bprequest Status to exclude reporting
+    [Parameter(Mandatory=$false)]
+    [string]$ExcludeBPRequestStatus = 'SUCCEEDED|FAILED',
+
+    #cat_comprequest Status to exclude reporting
+    [Parameter(Mandatory=$false)]
+    [string]$ExcludeCompRequestStatus = 'SUCCEEDED|FAILED'
+)
+
+Begin {
+
+    Write-Verbose "[INFO] ParameterSet: $($PSCmdlet.ParameterSetName)"
+
+    if (-not (Test-Path -Path $plinkexepath -ErrorAction SilentlyContinue)) {
+        throw "plink.exe not found at: $($plinkExePath)"
+    }
+
+    Write-Verbose "[INFO] ExcludeRequestState: $($ExcludeRequestState)"
+    Write-Verbose "[INFO] ExcludeBPRequestStatus: $($ExcludeBPRequestStatus)"
+    Write-Verbose "[INFO] ExcludeCompRequestStatus: $($ExcludeCompRequestStatus)"
+
+}
+
+
+Process {
+
+    if ($PSCmdlet.ParameterSetName -eq "Name") {
+        Write-Verbose "[INFO] Name: $($Name)"
+
+        #region --- Get the resource object and the child resources
+
+        Write-Verbose "[INFO] Validate if a parent deployment"
+        $query = "select name,id,status,parentresource_id,request_id from cat_resource where name='$($Name)';"
+        Write-Verbose "[INFO] Query: $($query)"
+        try {
+            $result = Invoke-vRADbQuery -Query $query -ComputerName $ComputerName -Credential $Credential
+        } catch {
+            throw "nothing found with the name: $($Name)"
+        }
+    
+        if ($result) {
+            Write-Verbose "[INFO] Parent Deployment: $($result | Out-String)"
+
+            $parentResourceId = $result.id
+
+            if($parentResourceId -and $result.parentresource_id) {
+                throw "ERROR: Only Parent deployments are currently supported."
+            }
+            #TODO: Add code to move up and get the Parent resource
+            $DeploymentName = $Name
+
+            [array]$resourceList = $result       
+        } else {
+            throw "No Resource found with the name: $($name)"
+        }
+
+
+        Write-Verbose "[INFO] Get child resources"
+        $query = "select name,id,status,parentresource_id,request_id from cat_resource where parentresource_id='$($parentResourceId)';"
+        Write-Verbose "[INFO] Query: $($query)"
+        $result = Invoke-vRADbQuery -Query $query -ComputerName $ComputerName -Credential $Credential
+        if ($result) {
+            $resourceList += $result
+        }
+
+        if($result) {
+            foreach ($resId in $result.id) {
+                $query = "select name,id,status,parentresource_id,request_id from cat_resource where parentresource_id='$($resId)';"
+                Write-Verbose "[INFO] Query: $($query)"
+                $result = Invoke-vRADbQuery -Query $query -ComputerName $ComputerName -Credential $Credential
+                $resourceList += $result
+            }
+        } else {
+            Write-Verbose "[INFO] No 2nd level child resources found."
+        }
+
+        Write-Verbose "[INFO] Resource List: $($resourceList | Select name, status | Out-String)"
+
+        #endregion --------
+
+
+        #region --- Get all deployments ----------------
+
+        $resourceIds = $resourceList.id
+        #create a sql query list of items
+        $resIdList = ""
+        foreach ($id in $resourceList.id){
+            $resIdList += "'$id',"
+        }#end foreach item
+        $resIdList = $resIdList.TrimEnd(",")
+        #$resIdList
+
+        $query = "select name,id,status,cafe_resource_id,description,last_bprequest_id from comp_deployment where cafe_resource_id in ($($resIdList));"
+        Write-Verbose "[INFO] Deployments - Query: $($query)"
+        try {
+            $deploymentList = Invoke-vRADbQuery -Query $query -ComputerName $ComputerName -Credential $Credential
+        } catch {
+            #may have to catch when zero return. so it doesn't error? because I do not want it to terminate.
+            Write-Verbose "[INFO] No Deployments found."
+        }
+        Write-Verbose "[INFO] Deployment List: $($deploymentList | Out-String)"
+        #endregion -----
+
+
+        #region ---- Get the original request?
+        [array]$requestList = $null
+        $query = "select id,requestnumber,state,datecreated,datesubmitted,requestedby,description,requestcompletionstate from cat_request where id in ('$(($resourceList | Select -ExpandProperty request_id) -join ("','"))');"
+        Write-Verbose "[INFO] Original Request(s) - Query: $($query)"
+        try {
+            $requestList = Invoke-vRADbQuery -Query $query -ComputerName $ComputerName -Credential $Credential
+        } catch {
+            #may have to catch when zero return. so it doesn't error? because I do not want it to terminate.
+            Write-Verbose "[INFO] No original request found."
+        }
+        Write-Verbose "[INFO] Original Request: $($requestList | Out-String)"
+
+
+        #endregion -------------------------------
+
+
+        #region --- get requests of the resources
+        <#
+            Need all the requests so that can look for the bp and comprequest items
+        #>
+        $Query = "select id,requestnumber,state,datecreated,datesubmitted,requestcompletionstate from cat_request where resource_id in ('$(($resourceList | Select -ExpandProperty id) -join ("','"))') or id in ('$(($resourceList | ? { $_.request_id } | Select -ExpandProperty request_id) -join ("','"))') order by requestnumber DESC;"
+        Write-Verbose "[INFO] Query: $($query)"
+        try {
+            $result = Invoke-vRADbQuery -Query $query -ComputerName $ComputerName -Credential $Credential
+        } catch {
+            #may have to catch when zero return. so it doesn't error? because I do not want it to terminate.
+            Write-Verbose "[INFO] No Requests found."
+        }
+
+        if ($result) {
+            $requestList += $result
+        }
+        Write-Verbose "[INFO] Request List: $($requestList | Out-String)"
+        #Write-Verbose "[INFO] Request List: $($requestList | ? { $_.state -notmatch $ExcludeRequestState } | Select id,state,RequestNumber | Out-String)"
+
+        foreach ($request in $requestList | ? { $_.state -notmatch $ExcludeRequestState } ) {
+        
+            $hash = [ordered]@{}
+            $hash.Name = $DeploymentName
+            $hash.Table = "cat_request"
+            $hash.Id = $request.id
+            $hash.Status = $request.state
+            $hash.Info = $request.requestnumber
+            $hash.CreatedDate = $request.datecreated
+            $object = New-Object PSObject -Property $hash
+            $object
+        }
+
+        #endregion ---
+
+
+        #region -- get all the comp_bprequests
+        #need parent_id. if bprequest has a parent_id it means there is a parent bprequest. only once there is not parent_id, can you look back up to the request
+
+        $Query = "select id,status,request_type,created_date,parent_id,description,external_request_id,dep_id from comp_bprequest where ( dep_id in ('$(($deploymentList | Select -ExpandProperty id) -join ("','"))') or ( external_request_id in ('$(($requestList | Select -ExpandProperty id) -join ("','"))') ) ) order by datesubmitted DESC;"
+        Write-Verbose "[INFO] Query: $($query)"
+        try {
+            $bprequestList = Invoke-vRADbQuery -Query $query -ComputerName $ComputerName -Credential $Credential
+        } catch {
+            #may have to catch when zero return. so it doesn't error? because I do not want it to terminate.
+            Write-Verbose "[INFO] No Requests found."
+        }
+
+        if($bprequestList) {
+            Write-Verbose "[INFO] BP Request Result: $($bprequestList | Out-String)"
+
+            foreach ($request in $bprequestList | ? { $_.status -notmatch $ExcludeBPRequestStatus } ) {
+        
+                $hash = [ordered]@{}
+                $hash.Name = $DeploymentName
+                $hash.Table = "comp_bprequest"
+                $hash.Id = $request.id
+                $hash.Status = $request.status
+                $hash.Info = $request.request_type
+                $hash.CreatedDate = $request.created_date
+                $object = New-Object PSObject -Property $hash
+                $object
+            }
+        }
+
+
+        #endregion ---
+
+
+        #region --- get all the comp_comprequests
+
+        $Query = "select id,status,request_type,created_date from comp_comprequest where parent_id in ('$(($bprequestList | Select -ExpandProperty id) -join ("','"))') order by datesubmitted DESC;"
+        Write-Verbose "[INFO] Query: $($query)"
+        try {
+            $comprequestList = Invoke-vRADbQuery -Query $query -ComputerName $ComputerName -Credential $Credential
+        } catch {
+            #may have to catch when zero return. so it doesn't error? because I do not want it to terminate.
+            Write-Verbose "[INFO] No Requests found."
+        }
+
+        if($comprequestList) {
+            Write-Verbose "[INFO] Component Request List: $($comprequestList | Out-String)"
+    
+            foreach ($request in $comprequestList | ? { $_.status -notmatch $ExcludeCompRequestStatus } ) {
+        
+                $hash = [ordered]@{}
+                $hash.Name = $DeploymentName
+                $hash.Table = "comp_comprequest"
+                $hash.Id = $request.id
+                $hash.Status = $request.status
+                $hash.Info = $request.request_type
+                $hash.CreatedDate = $request.created_date
+                $object = New-Object PSObject -Property $hash
+                $object
+            }
+        }
+
+        #endregion ---------------------
+
+
+        #region ---- Gather all the data and create output ----------------
+
+        <#
+        foreach ($compRequest in $comprequestList) {
+    
+            #trace up the line to get BPRequest and cat_request
+
+            $hash = [ordered]@{}
+            $hash.Name = $DeploymentName
+            $hash.RequestNumber = 
+            $hash.BPRequestId = 
+            $hash.BPRequestStatus = 
+            $hash.CompRequestId = 
+            $hash.CompRequestStatus =
+            $object = New-Object PSObject -Property $hash
+            $object
+    
+        }
+
+
+        foreach ($bprequest in $bprequestList | ? { $_.status -notmatch $ExcludeCompRequestStatus }) {
+        
+        }
+        #>
+
+
+        #endregion -------------------
+    }
+
+    if ($PSCmdlet.ParameterSetName -eq "Request") {
+        foreach ($item in $RequestNumber) {
+            Write-Verbose "[INFO] Request Number: $($item)"
+
+            #region --- Request
+            $query = "select id,requestnumber,state,datecreated,datesubmitted,requestedby,description,requestcompletionstate from cat_request where requestnumber='$($item)';"
+            Write-Verbose "[INFO] Request Query: $($query)"
+            try {
+                $requestList = Invoke-vRADbQuery -Query $query -ComputerName $ComputerName -Credential $Credential
+            } catch {
+                #may have to catch when zero return. so it doesn't error? because I do not want it to terminate.
+                Write-Verbose "[INFO] No Request found."
+                Return
+            }
+            Write-Verbose "[INFO] Original Request: $($requestList | Out-String)"
+
+
+            #endregion ---Request ----------------------------
+
+
+
+            #region -- get all the comp_bprequests
+
+            $bpQuery = "select id,status,request_type,created_date,parent_id,description,external_request_id,dep_id from comp_bprequest where external_request_id in ('$(($requestList | Select -ExpandProperty id) -join ("','"))') order by datesubmitted DESC;"
+            Write-Verbose "[INFO] BPQuery: $($bpQuery)"
+            try {
+                $bprequestList = Invoke-vRADbQuery -Query $bpQuery -ComputerName $ComputerName -Credential $Credential
+            } catch {
+                #may have to catch when zero return. so it doesn't error? because I do not want it to terminate.
+                Write-Verbose "[INFO] No Requests found."
+            }
+
+            if($bprequestList) {
+                Write-Verbose "[INFO] BP Request Result: $($bprequestList | Out-String)"
+
+                foreach ($request in $bprequestList | ? { $_.status -notmatch $ExcludeBPRequestStatus } ) {
+        
+                    $hash = [ordered]@{}
+                    $hash.RequestNumber = $item
+                    $hash.Table = "comp_bprequest"
+                    $hash.Id = $request.id
+                    $hash.Status = $request.status
+                    $hash.Info = $request.request_type
+                    $hash.CreatedDate = $request.created_date
+                    $object = New-Object PSObject -Property $hash
+                    $object
+                }
+            }
+
+
+            #endregion ---
+
+
+            #region --- get all the comp_comprequests
+
+            $compQuery = "select id,status,request_type,created_date from comp_comprequest where parent_id in ('$(($bprequestList | Select -ExpandProperty id) -join ("','"))') order by datesubmitted DESC;"
+            Write-Verbose "[INFO] Comp Query: $($compQuery)"
+            try {
+                $comprequestList = Invoke-vRADbQuery -Query $compQuery -ComputerName $ComputerName -Credential $Credential
+            } catch {
+                #may have to catch when zero return. so it doesn't error? because I do not want it to terminate.
+                Write-Verbose "[INFO] No Requests found."
+            }
+
+            if($comprequestList) {
+                Write-Verbose "[INFO] Component Request List: $($comprequestList | Out-String)"
+    
+                foreach ($request in $comprequestList | ? { $_.status -notmatch $ExcludeCompRequestStatus } ) {
+        
+                    $hash = [ordered]@{}
+                    $hash.RequestNumber = $item
+                    $hash.Table = "comp_comprequest"
+                    $hash.Id = $request.id
+                    $hash.Status = $request.status
+                    $hash.Info = $request.request_type
+                    $hash.CreatedDate = $request.created_date
+                    $object = New-Object PSObject -Property $hash
+                    $object
+                }
+            }
+
+            #endregion ---------------------
+
+        }
+    }
+
+}
+
+End {
+    Write-Verbose "[INFO] End"
+}
+
+}
