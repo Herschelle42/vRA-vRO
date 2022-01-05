@@ -327,10 +327,11 @@ Process {
             }
 
             If ($requestList) {
-                Write-Verbose "[INFO] Original Request: $($requestList | Out-String)"
+                Write-Verbose "[INFO] $(Get-Date) Original Request: $($requestList | Out-String)"
             
                 foreach ($request in $requestList | ? { -not $ExcludeRequestState -and $_.state -or $_.state -notmatch $ExcludeRequestState} ) {
-        
+                    Write-Verbose "[INFO] $(Get-Date) Request: $($request.requestnumber)"
+
                     $hash = [ordered]@{}
                     $hash.RequestNumber = $item
                     $hash.Table = "cat_request"
@@ -342,7 +343,7 @@ Process {
                     $object
                 }
             } else { 
-                Write-Verbose "[INFO] No Request found."
+                Write-Verbose "[INFO] $(Get-Date) No Request found."
                 Continue
             }
 
@@ -365,15 +366,16 @@ Process {
             if($bprequestList) {
                 Write-Verbose "[INFO] BP Request Result: $($bprequestList | Out-String)"
 
-                foreach ($request in $bprequestList | ? { -not $ExcludeBPRequestStatus -and $_.status -or $_.status -notmatch $ExcludeBPRequestStatus} ) {
-        
+                foreach ($bpRequest in $bprequestList | ? { -not $ExcludeBPRequestStatus -and $_.status -or $_.status -notmatch $ExcludeBPRequestStatus} ) {
+                    Write-Verbose "[INFO] $(Get-Date) BP Request: $($bpRequest.id)"
+
                     $hash = [ordered]@{}
                     $hash.RequestNumber = $item
                     $hash.Table = "comp_bprequest"
-                    $hash.Id = $request.id
-                    $hash.Status = $request.status
-                    $hash.Info = $request.request_type
-                    $hash.CreatedDate = $request.created_date
+                    $hash.Id = $bpRequest.id
+                    $hash.Status = $bpRequest.status
+                    $hash.Info = $bpRequest.request_type
+                    $hash.CreatedDate = $bpRequest.created_date
                     $object = New-Object PSObject -Property $hash
                     $object
                 }
@@ -398,15 +400,16 @@ Process {
                 if($comprequestList) {
                     Write-Verbose "[INFO] Component Request List: $($comprequestList | Out-String)"
     
-                    foreach ($request in $comprequestList | ? { -not $ExcludeCompRequestStatus -and $_.status -or $_.status -notmatch $ExcludeCompRequestStatus } ) {
-        
+                    foreach ($compRequest in $comprequestList | ? { -not $ExcludeCompRequestStatus -and $_.status -or $_.status -notmatch $ExcludeCompRequestStatus } ) {
+                        Write-Verbose "[INFO] $(Get-Date) compRequest: $($compRequest.id)"
+
                         $hash = [ordered]@{}
                         $hash.RequestNumber = $item
                         $hash.Table = "comp_comprequest"
-                        $hash.Id = $request.id
-                        $hash.Status = $request.status
-                        $hash.Info = $request.request_type
-                        $hash.CreatedDate = $request.created_date
+                        $hash.Id = $compRequest.id
+                        $hash.Status = $compRequest.status
+                        $hash.Info = $compRequest.request_type
+                        $hash.CreatedDate = $compRequest.created_date
                         $object = New-Object PSObject -Property $hash
                         $object
                     }
