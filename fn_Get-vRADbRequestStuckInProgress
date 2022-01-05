@@ -69,7 +69,7 @@ Param (
 
     #cat_comprequest Status to exclude reporting
     [Parameter(Mandatory=$false)]
-    [string]$ExcludeCompRequestStatus = 'SUCCEEDED|FAILED|CANCELLED'
+    [string]$ExcludeCompRequestStatus = 'SUCCEEDED|FAILED|CANCELLED|ABORTED'
 )
 
 Begin {
