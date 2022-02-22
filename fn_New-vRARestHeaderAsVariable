@@ -24,6 +24,10 @@ Param(
     [Alias('CN','__SERVER','IPAddress','Server')]
     [System.String]
     $ComputerName,
+    #Tenant - default is "vsphere.local"
+    [Parameter(Mandatory=$false)]
+    [string]
+    $tenant = "vsphere.local",
     #The Credential object to use for the username and password
     [Parameter(Mandatory)]
     [Management.Automation.PSCredential]
@@ -39,7 +43,6 @@ Param(
 
     $Username = $credential.username
     $Password = $credential.getnetworkcredential().Password
-    $tenant = "vsphere.local"
 
     $body = @{
         username = $Username
