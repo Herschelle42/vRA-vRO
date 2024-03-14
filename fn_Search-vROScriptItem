@@ -330,7 +330,7 @@ function Search-vROScriptItem
                 foreach ($contentItem in $wfContent.'workflow-item' | ? { $_.Script } )
                 {
                     Write-Verbose "[INFO] Item Name: $($contentItem.'display-name')"
-                    $itemPath = "$($item.globalTags.Replace(' ','\'))\$($item.name)"
+                    $itemPath = "$($item.globalTags.Replace(' ','\').Replace(':__SYSTEM_TAG__',''))\$($item.name)"
                     Write-Verbose "[INFO] Item Path: $($itemPath)"
         
                     #Is this a regex search or a simple text search.
