@@ -164,7 +164,15 @@ function Search-vROScriptItem
 
             $uri = "$($apiUri)/actions"
             $result = $null
-            $result = Invoke-RestMethod -Method $method -UseBasicParsing -Uri $uri -Headers $headers
+            try {
+                $result = Invoke-RestMethod -Method $method -UseBasicParsing -Uri $uri -Headers $headers
+            } catch {
+                Write-Output "Error Exception Code: $($_.exception.gettype().fullname)"
+                Write-Output "Error Message:        $($_.ErrorDetails.Message)"
+                Write-Output "Exception:            $($_.Exception)"
+                Write-Output "StatusCode:           $($_.Exception.Response.StatusCode.value__)"
+                throw
+            }
 
             Write-Verbose "[INFO] Create a new flat custom object for easier manipulation"
             $item = $null
@@ -278,7 +286,16 @@ function Search-vROScriptItem
 
             $uri = "$($apiUri)/workflows?maxResult=2147483647&startIndex=0&queryCount=false"
             $result = $null
-            $result = Invoke-RestMethod -Method $method -UseBasicParsing -Uri $uri -Headers $headers
+
+            try {
+                $result = Invoke-RestMethod -Method $method -UseBasicParsing -Uri $uri -Headers $headers
+            } catch {
+                Write-Output "Error Exception Code: $($_.exception.gettype().fullname)"
+                Write-Output "Error Message:        $($_.ErrorDetails.Message)"
+                Write-Output "Exception:            $($_.Exception)"
+                Write-Output "StatusCode:           $($_.Exception.Response.StatusCode.value__)"
+                throw
+            }
 
             Write-Verbose "[INFO] Create a new flat custom object for easier manipulation"
             $item = $null
